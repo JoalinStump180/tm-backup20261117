@@ -12,6 +12,10 @@
 (function() {
     'use strict';
 try{
+
+
+    var currentURL='currurl';
+var lastURL='lasturl';
     const LOG = (...args) => console.log('%c[YTMOD]', 'color:#0af;font-weight:bold', ...args);
     const WARN = (...args) => console.warn('%c[YTMOD]', 'color:orange;font-weight:bold', ...args);
     const ERR = (...args) => console.error('%c[YTMOD]', 'color:red;font-weight:bold', ...args);
@@ -198,7 +202,7 @@ try{
 
     function updateTitle() {
         //if (isPaused) return;
-
+         lastURL=currentURL;
         try {
             trackRun();
 
@@ -207,7 +211,7 @@ try{
                 return;
             }
 
-            const currentURL = window.location.href;
+              currentURL = window.location.href;
             const date = new Date();
             const year = date.getFullYear();
             const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -235,20 +239,20 @@ try{
                         const uploader2 = decodeURI(getShortsUploader2() ?? "");
 
                         if (window.location.href.includes('/watch')) {
-                            document.title = `${uploader1}${uploader2} ---- ${myaccountprefix}${title1}[${formattedDate}] ${formattedTime}  ${currentURL}`.sanitizeWindowsFilename();
+                           if (lastURL!==currentURL||!document.title.includes('@')) document.title = `${uploader1}${uploader2} ---- ${myaccountprefix}${title1}[${formattedDate}] ${formattedTime}  ${currentURL}`.sanitizeWindowsFilename();
                         }
                         if (window.location.href.includes('youtube.com/short')) {
-                            document.title = `${uploader2} ---- ${title2}[${formattedDate}] ${formattedTime}  ${currentURL}`.sanitizeWindowsFilename();
+                          if (lastURL!==currentURL||!document.title.includes('@'))   document.title = `${uploader2} ---- ${title2}[${formattedDate}] ${formattedTime}  ${currentURL}`.sanitizeWindowsFilename();
                         }
                     } else if (window.location.href.includes('www.youtube.com/@') || window.location.href.includes('www.youtube.com/channel')) {
                         if (!document.title.includes('playlist') && !document.title.includes('ytc_usermainpage')) {
                             const t = document.querySelector('title');
                             if (t) {
-                                document.title = t.textContent + ` ytc_usermainpage ${formattedDate} ${formattedTime}  ${currentURL}`.sanitizeWindowsFilename();
+                               if (lastURL!==currentURL||!document.title.includes('----'))  document.title = t.textContent + ` ytc_usermainpage ---- ${formattedDate} ${formattedTime}  ${currentURL}`.sanitizeWindowsFilename();
                             }
                         }
                     } else {
-                        document.title = `${title3} ${myaccountprefix}${formattedDate} ${formattedTime} ${currentURL}`.sanitizeWindowsFilename();
+                       if (lastURL!==currentURL||!document.title.includes('----'))  document.title = `${title3} ---- ${myaccountprefix}${formattedDate} ${formattedTime} ${currentURL}`.sanitizeWindowsFilename();
                     }
                 }
             }
@@ -261,11 +265,11 @@ try{
                     window.location.href.includes('taobao.com') ||
                     window.location.href.includes('chatgpt.com')) {
                     if (!document.title.includes(myaccountprefix)) {
-                        document.title = `${myaccountprefix}${document.title}`;
+                       if (lastURL!==currentURL||!document.title.includes('----'))  document.title = `${myaccountprefix} ---- ${document.title}`;
                     }
                 } else {
                     if (!document.title.includes(formattedDate)) {
-                        document.title = `${title3} ytc_none ${formattedDate} ${formattedTime} ${currentURL}`.sanitizeWindowsFilename();
+                       if (lastURL!==currentURL||!document.title.includes('----'))  document.title = `${title3} ytc_none ---- ${formattedDate} ${formattedTime} ${currentURL}`.sanitizeWindowsFilename();
                     }
                 }
             }
