@@ -5,13 +5,20 @@
 // @description  Detect YouTube ad/play stage and save up to 3 viewport snapshots per video.
 // @match        https://*/*
 // @match        https://m.youtube.com/*
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-idle
 // ==/UserScript==
 
 (function () {
   "use strict";
 
+
+
+        var currentURL='currurl';
+var lastURL='lasturl';
+            var currentTitle='currurl';
+var lastTitle='lasturl';
   const DB_NAME = "ytCueSnaps";
   const DB_VERSION = 1;
   const STORE = "snaps";
@@ -40,52 +47,38 @@
   }
 
 
-  function openDb() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(STORE)) {
-          const store = db.createObjectStore(STORE, { keyPath: "key" });
-          store.createIndex("byVideo", "videoId");
-          store.createIndex("bySlot", "slot");
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
+  const SNAPS_KEY = "ytCueSnaps";
 
   function snapKey(videoId, slot) {
     return videoId + "|" + slot;
   }
 
+  function loadSnaps() {
+    try {
+      const rows = GM_getValue(SNAPS_KEY, []);
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveSnaps(rows) {
+    GM_setValue(SNAPS_KEY, rows);
+  }
+
   async function getSnap(videoId, slot) {
-    const db = await openDb();
-    return new Promise((resolve, reject) => {
-      const req = db.transaction(STORE, "readonly").objectStore(STORE).get(snapKey(videoId, slot));
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+    const key = snapKey(videoId, slot);
+    return loadSnaps().find((row) => row.key === key) || null;
   }
 
   async function putSnap(row) {
-    const db = await openDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, "readwrite");
-      tx.objectStore(STORE).put(row);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    const rows = loadSnaps().filter((item) => item.key !== row.key);
+    rows.push(row);
+    saveSnaps(rows);
   }
 
   async function allSnaps() {
-    const db = await openDb();
-    return new Promise((resolve, reject) => {
-      const req = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    return loadSnaps();
   }
 
   async function snapsFor(videoId) {
@@ -94,17 +87,7 @@
   }
 
   async function deleteWhere(pred) {
-    const rows = await allSnaps();
-    const db = await openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, "readwrite");
-      const store = tx.objectStore(STORE);
-      for (const row of rows) {
-        if (pred(row)) store.delete(row.key);
-      }
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    saveSnaps(loadSnaps().filter((row) => !pred(row)));
   }
 
   function videoIdFromLocation() {
@@ -176,7 +159,14 @@
   let panel, titleEl, bodyEl, listEl, minBtn, captureBox;
   const CAPTURE_KEY = "yt-cue-snaps-capture-on";
   let captureOn = localStorage.getItem(CAPTURE_KEY) !== "0";
-  let searchBox, rangeBox, hitCountEl, pageLabel, goBox;
+  const MAX_LEN_KEY = "yt-cue-snaps-folder-max-len";
+  function clampFolderMaxLen(raw) {
+    const n = Number.parseInt(String(raw ?? "").trim(), 10);
+    if (!Number.isInteger(n) || n < 1) return 80;
+    return Math.min(n, 200);
+  }
+  let folderMaxLen = clampFolderMaxLen(localStorage.getItem(MAX_LEN_KEY));
+  let searchBox, rangeBox, maxLenBox, hitCountEl, pageLabel, goBox;
   let expanded = false;
   let busy = false;
   let pageIndex = 0;
@@ -316,6 +306,17 @@
       pageIndex = 0;
       openPanel();
     });
+    maxLenBox = document.createElement("input");
+    maxLenBox.type = "text";
+    maxLenBox.value = String(folderMaxLen);
+    maxLenBox.placeholder = "80";
+    maxLenBox.title = "Max folder title length in ZIP (default 80, 1-200)";
+    maxLenBox.style.width = "46px";
+    maxLenBox.addEventListener("change", () => {
+      folderMaxLen = clampFolderMaxLen(maxLenBox.value);
+      maxLenBox.value = String(folderMaxLen);
+      localStorage.setItem(MAX_LEN_KEY, String(folderMaxLen));
+    });
     hitCountEl = document.createElement("span");
     hitCountEl.textContent = "hits 0";
     hitCountEl.style.minWidth = "64px";
@@ -338,7 +339,7 @@
     goBtn.type = "button";
     goBtn.textContent = "go";
     goBtn.addEventListener("click", (e) => { e.stopPropagation(); goToItem(); });
-    searchRow.append(searchBox, rangeBox, hitCountEl, prevPage, nextPage, pageLabel, goBox, goBtn);
+    searchRow.append(searchBox, rangeBox, maxLenBox, hitCountEl, prevPage, nextPage, pageLabel, goBox, goBtn);
 
     listEl = document.createElement("div");
     fixed.append(actions, searchRow);
@@ -437,14 +438,21 @@
     const q = String(keyword || "").trim().toLowerCase();
     const range = monthRange(rangeBox && rangeBox.value);
     const hits = [];
-    for (const [id, list] of byVideo.entries()) {
-      list.sort((a, b) => a.slot - b.slot);
-      const when = newestAt(list);
-      if (range && (when < range.start || when > range.end)) continue;
-      const first = list[0];
-      const hay = [first.title, videoUrl(id), id, fmtTime(first.duration)].join(" ").toLowerCase();
-      if (q && !hay.includes(q)) continue;
-      hits.push({ id, list, when });
+for (const [id, list] of byVideo.entries()) {
+      const folder = dirName(list[0].title, id, folderMaxLen);
+      for (const row of list) {
+        if (!row.image) continue;
+        const shotTime = safeCueTag(row.cue);
+        const rawTitle = row.title || list[0].title || id;
+        const title40 = safePart(rawTitle).slice(0, 40);
+        const suffix = title40 ? `_${title40}` : "";
+        const fileName = `slot${row.slot}_[${safePart(id)}][${safePart(shotTime)}]${suffix}.jpg`;
+        files.push({
+          name: folder + "/" + fileName,
+          bytes: dataUrlBytes(row.image),
+          mtime: row.capturedAt || Date.now()
+        });
+      }
     }
     hits.sort((a, b) => b.when - a.when);
     return hits;
@@ -511,12 +519,16 @@
       const { id, list } = hit;
       const first = list[0];
       const stamp = stampParts(Math.min(...list.map((x) => x.capturedAt || Date.now())));
+   const nameTd = cell(n + ". " + (first.title || id), "180px");
+      nameTd.title = first.title || id;
+      const urlTd = cell(videoUrl(id));
+      urlTd.title = videoUrl(id);
       const tr = document.createElement("tr");
       tr.append(
         cell(stamp.date, "90px"),
         cell(stamp.time, "70px"),
-        cell(n + ". " + (first.title || id), "180px"),
-        cell(videoUrl(id)),
+        nameTd,
+        urlTd,
         cell(fmtTime(first.duration), "60px")
       );
       tb.appendChild(tr);
@@ -591,6 +603,15 @@
     return captureOn;
   }
   async function maybeCapture() {
+
+
+
+      currentURL = window.location.href;
+      currentTitle = document.title;
+       if (currentURL !== lastURL && currentTitle === lastTitle) return;
+      lastTitle=currentTitle;
+      lastURL=currentURL;
+
     if (!captureEnabled()) return;
     if (busy) return;
     const id = videoIdFromLocation();
@@ -642,13 +663,14 @@
   function safePart(s) {
     return String(s || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
   }
-  function dirName(title, videoId) {
+  function dirName(title, videoId, maxLen = folderMaxLen) {
+    const len = clampFolderMaxLen(maxLen);
     const raw = String(title || "");
     const cut = raw.indexOf("---");
     const before = safePart(cut >= 0 ? raw.slice(0, cut) : raw) || "untitled";
     const after = cut >= 0 ? raw.slice(cut + 3) : raw;
-    const next80 = safePart(after).slice(0, 80) || "untitled";
-    return before + "__" + safePart(videoId) + "__" + next80;
+    const nextPart = safePart(after).slice(0, len) || "untitled";
+    return before + "__" + safePart(videoId) + "__" + nextPart;
   }
   function dataUrlBytes(dataUrl) {
     const i = String(dataUrl || "").indexOf(",");
@@ -668,6 +690,18 @@
   }
   function u16(n) { return [n & 255, (n >> 8) & 255]; }
   function u32(n) { return [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255]; }
+  function dosTimeDate(ms) {
+    const d = new Date(Number.isFinite(ms) ? ms : Date.now());
+    const year = Math.min(2107, Math.max(1980, d.getFullYear()));
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    const hours = d.getHours();
+    const minutes = d.getMinutes();
+    const seconds = Math.floor(d.getSeconds() / 2);
+    const dosTime = (hours << 11) | (minutes << 5) | seconds;
+    const dosDate = ((year - 1980) << 9) | (month << 5) | day;
+    return { dosTime, dosDate };
+  }
   function buildStoredZip(files) {
     const locals = [];
     const centrals = [];
@@ -676,18 +710,20 @@
       const name = new TextEncoder().encode(file.name);
       const data = file.bytes;
       const crc = crc32(data);
+      const { dosTime, dosDate } = dosTimeDate(file.mtime);
+      const utf8 = name.length !== file.name.length ? 0x0800 : 0;
       const local = [
         0x50, 0x4b, 0x03, 0x04,
-        ...u16(20), ...u16(0), ...u16(0),
-        ...u16(0), ...u16(0),
+        ...u16(20), ...u16(utf8), ...u16(0),
+        ...u16(dosTime), ...u16(dosDate),
         ...u32(crc), ...u32(data.length), ...u32(data.length),
         ...u16(name.length), ...u16(0)
       ];
       locals.push(new Uint8Array(local), name, data);
       const central = [
         0x50, 0x4b, 0x01, 0x02,
-        ...u16(20), ...u16(20), ...u16(0), ...u16(0),
-        ...u16(0), ...u16(0),
+        ...u16(20), ...u16(20), ...u16(utf8), ...u16(0),
+        ...u16(dosTime), ...u16(dosDate),
         ...u32(crc), ...u32(data.length), ...u32(data.length),
         ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
         ...u32(0), ...u32(offset)
@@ -715,8 +751,22 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  
+  
+  
+  
+  function safeCueTag(sec) {
+    return fmtTime(sec).replace(/:/g, "-");
+  }
+  function fmtStampDash(ms) {
+    const d = new Date(Number.isFinite(ms) ? ms : Date.now());
+    const p = (n) => String(n).padStart(2, "0");
+    const ymd = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+    const hms = `${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+    return `${ymd}-${hms}`;
+  }
   async function export2Dir() {
-    const raw = prompt("Export range YYYYMMDD-YYYYMMDD", "");
+    const raw = prompt("Export range YYYYMMDD-YYYYMMDD", "20230101-20290101");
     if (raw == null || !String(raw).trim()) return;
     const range = parseRange(raw);
     if (!range) {
@@ -731,13 +781,22 @@
       byVideo.set(row.videoId, bag);
     }
     const files = [];
-    for (const [id, list] of byVideo.entries()) {
-      const folder = dirName(list[0].title, id);
+for (const [id, list] of byVideo.entries()) {
+      const folderStamp = fmtStampDash(newestAt(list));
+      const baseFolder = dirName(list[0].title, id, folderMaxLen);
+      const folder = `${folderStamp}_${baseFolder}`;
       for (const row of list) {
         if (!row.image) continue;
+        const shotStamp = fmtStampDash(row.capturedAt || Date.now());
+        const shotTime = safeCueTag(row.cue);
+        const rawTitle = row.title || list[0].title || id;
+        const title40 = safePart(rawTitle).slice(0, 40);
+        const suffix = title40 ? `_${title40}` : "";
+        const fileName = `${shotStamp}_slot${row.slot}_[${safePart(id)}][${safePart(shotTime)}]${suffix}.jpg`;
         files.push({
-          name: folder + "/slot" + row.slot + ".jpg",
-          bytes: dataUrlBytes(row.image)
+          name: folder + "/" + fileName,
+          bytes: dataUrlBytes(row.image),
+          mtime: row.capturedAt || Date.now()
         });
       }
     }
@@ -820,5 +879,5 @@
     arm();
     maybeCapture().catch(() => {});
   }, 500);
-  document.addEventListener("yt-navigate-finish", () => setTimeout(arm, 400));
+  //document.addEventListener("yt-navigate-finish", () => setTimeout(arm, 400));
 })();
