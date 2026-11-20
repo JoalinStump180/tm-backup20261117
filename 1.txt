@@ -1,0 +1,35 @@
+[33mcommit ca1f75de61603b0e7e5975c1ec1a8eb6746d9dba[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: JoalinStump180 <nadinesmith180@gmail.com>
+Date:   Sat Nov 21 00:57:16 2026 +0800
+
+    2
+
+[33mcommit 8a9ad6f3737af14fc073606a730eb13b449f03c2[m
+Author: JoalinStump180 <nadinesmith180@gmail.com>
+Date:   Sat Nov 21 00:53:07 2026 +0800
+
+    -1
+
+[33mcommit a4efac25a41dc0e7073be67b05ee1a79cf5e3894[m
+Author: JoalinStump180 <nadinesmith180@gmail.com>
+Date:   Sat Nov 21 00:42:59 2026 +0800
+
+    1
+
+[33mcommit 2d900b179e75d99662cd75e82b0b5ad5c7c26232[m
+Author: JoalinStump180 <nadinesmith180@gmail.com>
+Date:   Tue Nov 17 17:09:36 2026 +0800
+
+    2
+
+[33mcommit fd673c525f4fea38141730da07ea21ae2645da15[m
+Author: JoalinStump180 <nadinesmith180@gmail.com>
+Date:   Tue Nov 17 14:16:06 2026 +0800
+
+    first commit
+
+[33mcommit d32a86883a4abb9f3af2e029583866d266f75822[m
+Author: JoalinStump180 <nadinesmith180@gmail.com>
+Date:   Tue Nov 17 14:14:51 2026 +0800
+
+    first commit
